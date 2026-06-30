@@ -78,21 +78,19 @@ def render_kpis(df: pd.DataFrame):
     if task_bug_count > 0:
         completion_rate = round((task_bug_done / task_bug_count) * 100, 1)
 
-    stale_days = st.session_state.get("stale_days", 7)
-
-    stale_task_bug = 0
-    if not task_bug_df.empty:
-        stale_task_bug = int(
-            (
-                (task_bug_df["Done"] == False)
-                & (task_bug_df["DaysSinceUpdate"].fillna(0) >= stale_days)
-            ).sum()
-        )
-
     unassigned_task_bug = 0
+    assignee_task_bug = 0
+
     if not task_bug_df.empty:
         unassigned_task_bug = int(
             (task_bug_df["Assignee"].fillna("").str.strip() == "").sum()
+        )
+
+        assignee_task_bug = int(
+            task_bug_df["Assignee"]
+            .replace("", pd.NA)
+            .dropna()
+            .nunique()
         )
 
     c1, c2, c3, c4, c5 = st.columns(5)
@@ -101,7 +99,7 @@ def render_kpis(df: pd.DataFrame):
     c2.metric("Task/Bug aperti", task_bug_open)
     c3.metric("Task/Bug completati", task_bug_done)
     c4.metric("Avanzamento Task/Bug", f"{completion_rate}%")
-    c5.metric("Task/Bug fermi", stale_task_bug)
+    c5.metric("Task/Bug non assegnati", unassigned_task_bug)
 
     c6, c7, c8, c9, c10 = st.columns(5)
 
@@ -109,7 +107,7 @@ def render_kpis(df: pd.DataFrame):
     c7.metric("Epiche", epics_count)
     c8.metric("Altri tipi", other_count)
     c9.metric("Issue totali", total_issues)
-    c10.metric("Task/Bug non assegnati", unassigned_task_bug)
+    c10.metric("Assegnatari Task/Bug", assignee_task_bug)
 
 def render_status_panel(df: pd.DataFrame, key_suffix: str = "default"):
     st.subheader("Task/Bug per stato")
@@ -454,117 +452,6 @@ def render_age_panel(df: pd.DataFrame, key_suffix: str = "default"):
         },
     )
 
-def render_alerts_panel(
-    df: pd.DataFrame,
-    stale_days: int,
-    key_suffix: str = "default",
-):
-    st.subheader("Alert operativi su Task/Bug")
-
-    if df.empty:
-        st.info("Nessun dato disponibile.")
-        return
-
-    task_bug_df = filter_task_bug(df)
-
-    if task_bug_df.empty:
-        st.info("Nessun Task o Bug disponibile per i filtri selezionati.")
-        return
-
-    open_df = task_bug_df[task_bug_df["Done"] == False].copy()
-
-    unassigned_df = open_df[
-        open_df["Assignee"].fillna("").str.strip() == ""
-    ]
-
-    stale_df = open_df[
-        open_df["DaysSinceUpdate"].fillna(0) >= stale_days
-    ].sort_values("DaysSinceUpdate", ascending=False)
-
-    no_epic_df = open_df[
-        (open_df["EpicKey"].fillna("").str.strip() == "")
-        & (open_df["EpicName"].fillna("").str.strip() == "")
-    ]
-
-    overdue_df = open_df[
-        open_df["DueDate"].notna()
-        & (open_df["DueDate"].dt.date < pd.Timestamp.today().date())
-    ].sort_values("DueDate", ascending=True)
-
-    tab1, tab2, tab3, tab4 = st.tabs(
-        [
-            f"Fermi da almeno {stale_days} giorni",
-            "Non assegnati",
-            "Senza Epic",
-            "Scaduti",
-        ]
-    )
-
-    columns = [
-        "Issue",
-        "Summary",
-        "IssueType",
-        "Stato",
-        "Assignee",
-        "Priority",
-        "EpicName",
-        "Created",
-        "Updated",
-        "DueDate",
-        "DaysOpen",
-        "DaysSinceUpdate",
-        "Url",
-    ]
-
-    with tab1:
-        render_alert_table(
-            stale_df,
-            columns,
-            key=f"{key_suffix}_stale",
-        )
-
-    with tab2:
-        render_alert_table(
-            unassigned_df,
-            columns,
-            key=f"{key_suffix}_unassigned",
-        )
-
-    with tab3:
-        render_alert_table(
-            no_epic_df,
-            columns,
-            key=f"{key_suffix}_no_epic",
-        )
-
-    with tab4:
-        render_alert_table(
-            overdue_df,
-            columns,
-            key=f"{key_suffix}_overdue",
-        )
-
-def render_alert_table(df: pd.DataFrame, columns: list[str], key: str):
-    if df.empty:
-        st.success("Nessuna anomalia rilevata.")
-        return
-
-    existing_columns = [
-        column
-        for column in columns
-        if column in df.columns
-    ]
-
-    st.dataframe(
-        df[existing_columns],
-        use_container_width=True,
-        hide_index=True,
-        key=f"alert_table_{key}",
-        column_config={
-            "Url": st.column_config.LinkColumn("Jira"),
-        },
-    )
-
 def render_detail_table(df: pd.DataFrame, key_suffix: str = "default"):
     st.subheader("Dettaglio issue")
 
@@ -585,7 +472,6 @@ def render_detail_table(df: pd.DataFrame, key_suffix: str = "default"):
         "Priority",
         "EpicKey",
         "EpicName",
-        "Sprint",
         "Created",
         "Updated",
         "DueDate",
