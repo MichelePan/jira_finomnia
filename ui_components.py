@@ -2,79 +2,133 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
+TASK_BUG_TYPES = {
+    "task",
+    "bug",
+}
+
+STORY_TYPES = {
+    "story",
+    "user story",
+    "storia",
+}
+
+EPIC_TYPES = {
+    "epic",
+    "epica",
+}
+
+def normalize_issue_type(value):
+    if value is None:
+        return ""
+
+    return str(value).strip().lower()
+
+def filter_task_bug(df: pd.DataFrame):
+    if df.empty or "IssueType" not in df.columns:
+        return df.copy()
+
+    return df[
+        df["IssueType"]
+        .apply(normalize_issue_type)
+        .isin(TASK_BUG_TYPES)
+    ].copy()
+
+def filter_stories(df: pd.DataFrame):
+    if df.empty or "IssueType" not in df.columns:
+        return df.copy()
+
+    return df[
+        df["IssueType"]
+        .apply(normalize_issue_type)
+        .isin(STORY_TYPES)
+    ].copy()
+
+def filter_epics(df: pd.DataFrame):
+    if df.empty or "IssueType" not in df.columns:
+        return df.copy()
+
+    return df[
+        df["IssueType"]
+        .apply(normalize_issue_type)
+        .isin(EPIC_TYPES)
+    ].copy()
+
 def render_kpis(df: pd.DataFrame):
     if df.empty:
         st.info("Nessun dato disponibile per i filtri selezionati.")
         return
 
-    total_tasks = len(df)
-    done_tasks = int(df["Done"].sum())
-    open_tasks = total_tasks - done_tasks
+    task_bug_df = filter_task_bug(df)
+    stories_df = filter_stories(df)
+    epics_df = filter_epics(df)
+
+    total_issues = len(df)
+    task_bug_count = len(task_bug_df)
+    stories_count = len(stories_df)
+    epics_count = len(epics_df)
+
+    classified_count = task_bug_count + stories_count + epics_count
+    other_count = total_issues - classified_count
+
+    task_bug_done = int(task_bug_df["Done"].sum()) if not task_bug_df.empty else 0
+    task_bug_open = task_bug_count - task_bug_done
 
     completion_rate = 0
-    if total_tasks > 0:
-        completion_rate = round((done_tasks / total_tasks) * 100, 1)
-
-    unassigned_tasks = int(
-        (df["Assignee"].fillna("").str.strip() == "").sum()
-    )
+    if task_bug_count > 0:
+        completion_rate = round((task_bug_done / task_bug_count) * 100, 1)
 
     stale_days = st.session_state.get("stale_days", 7)
 
-    stale_tasks = int(
-        (
-            (df["Done"] == False)
-            & (df["DaysSinceUpdate"].fillna(0) >= stale_days)
-        ).sum()
-    )
+    stale_task_bug = 0
+    if not task_bug_df.empty:
+        stale_task_bug = int(
+            (
+                (task_bug_df["Done"] == False)
+                & (task_bug_df["DaysSinceUpdate"].fillna(0) >= stale_days)
+            ).sum()
+        )
+
+    unassigned_task_bug = 0
+    if not task_bug_df.empty:
+        unassigned_task_bug = int(
+            (task_bug_df["Assignee"].fillna("").str.strip() == "").sum()
+        )
 
     c1, c2, c3, c4, c5 = st.columns(5)
 
-    c1.metric("Task totali", total_tasks)
-    c2.metric("Task aperti", open_tasks)
-    c3.metric("Task completati", done_tasks)
-    c4.metric("Avanzamento", f"{completion_rate}%")
-    c5.metric("Task fermi", stale_tasks)
+    c1.metric("Task/Bug", task_bug_count)
+    c2.metric("Task/Bug aperti", task_bug_open)
+    c3.metric("Task/Bug completati", task_bug_done)
+    c4.metric("Avanzamento Task/Bug", f"{completion_rate}%")
+    c5.metric("Task/Bug fermi", stale_task_bug)
 
     c6, c7, c8, c9, c10 = st.columns(5)
 
-    c6.metric(
-        "Non assegnati",
-        unassigned_tasks,
-    )
-
-    c7.metric(
-        "Epic",
-        df["EpicKey"].replace("", pd.NA).dropna().nunique(),
-    )
-
-    c8.metric(
-        "Assignee",
-        df["Assignee"].replace("", pd.NA).dropna().nunique(),
-    )
-
-    c9.metric(
-        "Issue Type",
-        df["IssueType"].replace("", pd.NA).dropna().nunique(),
-    )
-
-    c10.metric(
-        "Priorità",
-        df["Priority"].replace("", pd.NA).dropna().nunique(),
-    )
+    c6.metric("Storie", stories_count)
+    c7.metric("Epiche", epics_count)
+    c8.metric("Altri tipi", other_count)
+    c9.metric("Issue totali", total_issues)
+    c10.metric("Task/Bug non assegnati", unassigned_task_bug)
 
 def render_status_panel(df: pd.DataFrame, key_suffix: str = "default"):
-    st.subheader("Task per stato")
+    st.subheader("Task/Bug per stato")
 
     if df.empty:
         st.info("Nessun dato disponibile.")
         return
 
+    task_bug_df = filter_task_bug(df)
+
+    if task_bug_df.empty:
+        st.info("Nessun Task o Bug disponibile per i filtri selezionati.")
+        return
+
     status_df = (
-        df.groupby(["Stato", "StatusCategory"], dropna=False)
+        task_bug_df.groupby(["Stato", "StatusCategory"], dropna=False)
         .size()
-        .reset_index(name="Task")
-        .sort_values("Task", ascending=False)
+        .reset_index(name="Task/Bug")
+        .sort_values("Task/Bug", ascending=False)
     )
 
     col1, col2 = st.columns([2, 1])
@@ -83,15 +137,15 @@ def render_status_panel(df: pd.DataFrame, key_suffix: str = "default"):
         fig = px.bar(
             status_df,
             x="Stato",
-            y="Task",
+            y="Task/Bug",
             color="StatusCategory",
-            text="Task",
-            title="Distribuzione task per stato",
+            text="Task/Bug",
+            title="Distribuzione Task/Bug per stato",
         )
 
         fig.update_layout(
             xaxis_title="Stato",
-            yaxis_title="Numero task",
+            yaxis_title="Numero Task/Bug",
             legend_title="Categoria",
         )
 
@@ -118,19 +172,25 @@ def render_status_category_panel(df: pd.DataFrame, key_suffix: str = "default"):
         st.info("Nessun dato disponibile.")
         return
 
+    task_bug_df = filter_task_bug(df)
+
+    if task_bug_df.empty:
+        st.info("Nessun Task o Bug disponibile per i filtri selezionati.")
+        return
+
     category_df = (
-        df.groupby("StatusCategory", dropna=False)
+        task_bug_df.groupby("StatusCategory", dropna=False)
         .size()
-        .reset_index(name="Task")
-        .sort_values("Task", ascending=False)
+        .reset_index(name="Task/Bug")
+        .sort_values("Task/Bug", ascending=False)
     )
 
     fig = px.pie(
         category_df,
         names="StatusCategory",
-        values="Task",
+        values="Task/Bug",
         hole=0.45,
-        title="Distribuzione per categoria Jira",
+        title="Distribuzione Task/Bug per categoria Jira",
     )
 
     st.plotly_chart(
@@ -153,7 +213,13 @@ def render_epic_panel(df: pd.DataFrame, key_suffix: str = "default"):
         st.info("Nessun dato disponibile.")
         return
 
-    epic_df = df.copy()
+    task_bug_df = filter_task_bug(df)
+
+    if task_bug_df.empty:
+        st.info("Nessun Task o Bug disponibile per i filtri selezionati.")
+        return
+
+    epic_df = task_bug_df.copy()
 
     epic_df["Epic"] = epic_df["EpicName"]
 
@@ -170,19 +236,19 @@ def render_epic_panel(df: pd.DataFrame, key_suffix: str = "default"):
     grouped = (
         epic_df.groupby("Epic", dropna=False)
         .agg(
-            Task=("Issue", "count"),
+            TaskBug=("Issue", "count"),
             Completati=("Done", "sum"),
         )
         .reset_index()
     )
 
-    grouped["Aperti"] = grouped["Task"] - grouped["Completati"]
+    grouped["Aperti"] = grouped["TaskBug"] - grouped["Completati"]
 
     grouped["Avanzamento %"] = (
-        grouped["Completati"] / grouped["Task"] * 100
+        grouped["Completati"] / grouped["TaskBug"] * 100
     ).round(1)
 
-    grouped = grouped.sort_values("Task", ascending=False)
+    grouped = grouped.sort_values("TaskBug", ascending=False)
 
     col1, col2 = st.columns([2, 1])
 
@@ -191,13 +257,13 @@ def render_epic_panel(df: pd.DataFrame, key_suffix: str = "default"):
             grouped.head(20),
             x="Epic",
             y=["Aperti", "Completati"],
-            title="Task aperti/completati per Epic",
+            title="Task/Bug aperti e completati per Epic",
             barmode="stack",
         )
 
         fig.update_layout(
             xaxis_title="Epic",
-            yaxis_title="Numero task",
+            yaxis_title="Numero Task/Bug",
             legend_title="",
         )
 
@@ -216,13 +282,19 @@ def render_epic_panel(df: pd.DataFrame, key_suffix: str = "default"):
         )
 
 def render_assignee_panel(df: pd.DataFrame, key_suffix: str = "default"):
-    st.subheader("Task per assegnatario")
+    st.subheader("Task/Bug per assegnatario")
 
     if df.empty:
         st.info("Nessun dato disponibile.")
         return
 
-    assignee_df = df.copy()
+    task_bug_df = filter_task_bug(df)
+
+    if task_bug_df.empty:
+        st.info("Nessun Task o Bug disponibile per i filtri selezionati.")
+        return
+
+    assignee_df = task_bug_df.copy()
 
     assignee_df["Assignee"] = (
         assignee_df["Assignee"]
@@ -233,31 +305,31 @@ def render_assignee_panel(df: pd.DataFrame, key_suffix: str = "default"):
     grouped = (
         assignee_df.groupby("Assignee", dropna=False)
         .agg(
-            Task=("Issue", "count"),
+            TaskBug=("Issue", "count"),
             Completati=("Done", "sum"),
         )
         .reset_index()
     )
 
-    grouped["Aperti"] = grouped["Task"] - grouped["Completati"]
+    grouped["Aperti"] = grouped["TaskBug"] - grouped["Completati"]
 
     grouped["Avanzamento %"] = (
-        grouped["Completati"] / grouped["Task"] * 100
+        grouped["Completati"] / grouped["TaskBug"] * 100
     ).round(1)
 
-    grouped = grouped.sort_values("Task", ascending=False)
+    grouped = grouped.sort_values("TaskBug", ascending=False)
 
     fig = px.bar(
         grouped.head(25),
         x="Assignee",
         y=["Aperti", "Completati"],
-        title="Task per assegnatario",
+        title="Task/Bug per assegnatario",
         barmode="stack",
     )
 
     fig.update_layout(
         xaxis_title="Assegnatario",
-        yaxis_title="Numero task",
+        yaxis_title="Numero Task/Bug",
         legend_title="",
     )
 
@@ -275,13 +347,19 @@ def render_assignee_panel(df: pd.DataFrame, key_suffix: str = "default"):
     )
 
 def render_priority_panel(df: pd.DataFrame, key_suffix: str = "default"):
-    st.subheader("Task per priorità")
+    st.subheader("Task/Bug per priorità")
 
     if df.empty:
         st.info("Nessun dato disponibile.")
         return
 
-    priority_df = df.copy()
+    task_bug_df = filter_task_bug(df)
+
+    if task_bug_df.empty:
+        st.info("Nessun Task o Bug disponibile per i filtri selezionati.")
+        return
+
+    priority_df = task_bug_df.copy()
 
     priority_df["Priority"] = (
         priority_df["Priority"]
@@ -292,21 +370,21 @@ def render_priority_panel(df: pd.DataFrame, key_suffix: str = "default"):
     grouped = (
         priority_df.groupby("Priority", dropna=False)
         .size()
-        .reset_index(name="Task")
-        .sort_values("Task", ascending=False)
+        .reset_index(name="Task/Bug")
+        .sort_values("Task/Bug", ascending=False)
     )
 
     fig = px.bar(
         grouped,
         x="Priority",
-        y="Task",
-        text="Task",
-        title="Distribuzione task per priorità",
+        y="Task/Bug",
+        text="Task/Bug",
+        title="Distribuzione Task/Bug per priorità",
     )
 
     fig.update_layout(
         xaxis_title="Priorità",
-        yaxis_title="Numero task",
+        yaxis_title="Numero Task/Bug",
     )
 
     fig.update_traces(textposition="outside")
@@ -325,16 +403,22 @@ def render_priority_panel(df: pd.DataFrame, key_suffix: str = "default"):
     )
 
 def render_age_panel(df: pd.DataFrame, key_suffix: str = "default"):
-    st.subheader("Task aperti da più tempo")
+    st.subheader("Task/Bug aperti da più tempo")
 
     if df.empty:
         st.info("Nessun dato disponibile.")
         return
 
-    open_df = df[df["Done"] == False].copy()
+    task_bug_df = filter_task_bug(df)
+
+    if task_bug_df.empty:
+        st.info("Nessun Task o Bug disponibile per i filtri selezionati.")
+        return
+
+    open_df = task_bug_df[task_bug_df["Done"] == False].copy()
 
     if open_df.empty:
-        st.success("Non ci sono task aperti nel perimetro selezionato.")
+        st.success("Non ci sono Task/Bug aperti nel perimetro selezionato.")
         return
 
     open_df = open_df.sort_values("DaysOpen", ascending=False)
@@ -342,6 +426,7 @@ def render_age_panel(df: pd.DataFrame, key_suffix: str = "default"):
     columns = [
         "Issue",
         "Summary",
+        "IssueType",
         "Stato",
         "Assignee",
         "Priority",
@@ -374,13 +459,19 @@ def render_alerts_panel(
     stale_days: int,
     key_suffix: str = "default",
 ):
-    st.subheader("Alert operativi")
+    st.subheader("Alert operativi su Task/Bug")
 
     if df.empty:
         st.info("Nessun dato disponibile.")
         return
 
-    open_df = df[df["Done"] == False].copy()
+    task_bug_df = filter_task_bug(df)
+
+    if task_bug_df.empty:
+        st.info("Nessun Task o Bug disponibile per i filtri selezionati.")
+        return
+
+    open_df = task_bug_df[task_bug_df["Done"] == False].copy()
 
     unassigned_df = open_df[
         open_df["Assignee"].fillna("").str.strip() == ""
@@ -412,6 +503,7 @@ def render_alerts_panel(
     columns = [
         "Issue",
         "Summary",
+        "IssueType",
         "Stato",
         "Assignee",
         "Priority",
