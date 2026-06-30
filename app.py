@@ -15,7 +15,6 @@ from ui_components import (
     render_assignee_panel,
     render_priority_panel,
     render_age_panel,
-    render_alerts_panel,
     render_detail_table,
 )
 
@@ -73,30 +72,12 @@ if not jira_domain or not jira_email or not jira_api_token:
 # SIDEBAR
 # ======================
 
-st.sidebar.header("Configurazione")
+st.sidebar.header("Azioni")
 
-jql = st.sidebar.text_area(
-    "JQL perimetro progetto",
-    value=default_jql,
-    height=120,
-    help="Esempio: project = KAN AND issuetype != Epic ORDER BY updated DESC",
+refresh = st.sidebar.button(
+    "Aggiorna dati",
+    key="refresh_data",
 )
-
-exclude_done_from_alerts = st.sidebar.checkbox(
-    "Considera solo task aperti negli alert",
-    value=True,
-)
-
-stale_days = st.sidebar.slider(
-    "Task fermo se non aggiornato da almeno N giorni",
-    min_value=1,
-    max_value=60,
-    value=7,
-)
-
-st.session_state["stale_days"] = stale_days
-
-refresh = st.sidebar.button("Aggiorna dati")
 
 # ======================
 # CACHE
@@ -107,11 +88,6 @@ def cached_detect_epic_link_field(domain, email, token):
     client = JiraClient(domain, email, token)
     return client.detect_epic_link_field()
 
-@st.cache_data(ttl=24 * 60 * 60)
-def cached_detect_sprint_field(domain, email, token):
-    client = JiraClient(domain, email, token)
-    return client.detect_sprint_field()
-
 @st.cache_data(ttl=30 * 60)
 def cached_search_issues(
     domain,
@@ -119,7 +95,6 @@ def cached_search_issues(
     token,
     jql_query,
     epic_link_field_id,
-    sprint_field_id,
 ):
     client = JiraClient(domain, email, token)
 
@@ -140,9 +115,6 @@ def cached_search_issues(
     if epic_link_field_id:
         fields.append(epic_link_field_id)
 
-    if sprint_field_id:
-        fields.append(sprint_field_id)
-
     return client.search_issues_jql(jql_query, fields)
 
 if refresh:
@@ -161,20 +133,13 @@ try:
             jira_api_token,
         )
 
-        sprint_field_id = cached_detect_sprint_field(
-            jira_domain,
-            jira_email,
-            jira_api_token,
-        )
-
     with st.spinner("Caricamento issue Jira..."):
         issues = cached_search_issues(
             jira_domain,
             jira_email,
             jira_api_token,
-            jql,
+            default_jql,
             epic_link_field_id,
-            sprint_field_id,
         )
 
 except Exception as exc:
@@ -183,34 +148,17 @@ except Exception as exc:
     st.stop()
 
 # ======================
-# DEBUG SIDEBAR
-# ======================
-
-st.sidebar.divider()
-st.sidebar.subheader("Debug")
-
-st.sidebar.write("JQL effettivo:")
-st.sidebar.code(jql)
-
-st.sidebar.write("Issue recuperate da Jira:")
-st.sidebar.write(len(issues))
-
-if issues:
-    st.sidebar.write("Prime issue:")
-    st.sidebar.write([issue.get("key") for issue in issues[:10]])
-
-# ======================
 # EMPTY STATE
 # ======================
 
 if not issues:
-    st.info("Nessuna issue trovata per il JQL indicato.")
+    st.info("Nessuna issue trovata per il JQL configurato nei secrets.")
     st.stop()
 
 df = build_issues_dataframe(
     issues,
     epic_link_field_id=epic_link_field_id,
-    sprint_field_id=sprint_field_id,
+    sprint_field_id=None,
 )
 
 df = add_issue_urls(df, jira_domain)
@@ -314,25 +262,6 @@ selected_epics = [
     for epic in selected_epics_ui
 ]
 
-sprint_options = sorted(
-    df["Sprint"]
-    .fillna("")
-    .replace("", "Nessuno Sprint")
-    .unique()
-)
-
-selected_sprints_ui = st.sidebar.multiselect(
-    "Sprint",
-    options=sprint_options,
-    default=[],
-    key="filter_sprints",
-)
-
-selected_sprints = [
-    "" if sprint == "Nessuno Sprint" else sprint
-    for sprint in selected_sprints_ui
-]
-
 df_view = apply_filters(
     df,
     statuses=selected_statuses,
@@ -340,7 +269,6 @@ df_view = apply_filters(
     assignees=selected_assignees,
     priorities=selected_priorities,
     epics=selected_epics,
-    sprints=selected_sprints,
     only_open=only_open,
 )
 
@@ -354,13 +282,12 @@ render_kpis(df_view)
 
 st.divider()
 
-tab_overview, tab_flow, tab_epic, tab_people, tab_alerts, tab_details = st.tabs(
+tab_overview, tab_flow, tab_epic, tab_people, tab_details = st.tabs(
     [
         "Overview",
         "Stati e priorità",
         "Epic",
         "Persone",
-        "Alert",
         "Dettaglio",
     ]
 )
@@ -390,18 +317,6 @@ with tab_epic:
 
 with tab_people:
     render_assignee_panel(df_view, key_suffix="people")
-
-with tab_alerts:
-    alert_df = df_view.copy()
-
-    if exclude_done_from_alerts:
-        alert_df = alert_df[alert_df["Done"] == False]
-
-    render_alerts_panel(
-        alert_df,
-        stale_days,
-        key_suffix="alerts",
-    )
 
 with tab_details:
     render_detail_table(df_view, key_suffix="details")
