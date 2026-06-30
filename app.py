@@ -1,5 +1,6 @@
 import streamlit as st
 
+from auth import login_required, render_logout
 from jira_client import JiraClient
 from data_processing import (
     build_issues_dataframe,
@@ -27,6 +28,16 @@ st.set_page_config(
     page_icon="📊",
     layout="wide",
 )
+
+# ======================
+# LOGIN
+# ======================
+
+login_required()
+
+# ======================
+# PAGE HEADER
+# ======================
 
 st.title("📊 Jira Project Dashboard")
 st.caption("Dashboard di monitoraggio avanzamento progetto basata su issue Jira")
@@ -71,6 +82,8 @@ if not jira_domain or not jira_email or not jira_api_token:
 # ======================
 # SIDEBAR
 # ======================
+
+render_logout()
 
 st.sidebar.header("Azioni")
 
