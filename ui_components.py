@@ -129,39 +129,35 @@ def render_status_panel(df: pd.DataFrame, key_suffix: str = "default"):
         .sort_values("Task/Bug", ascending=False)
     )
 
-    col1, col2 = st.columns([2, 1])
+    fig = px.bar(
+        status_df,
+        x="Stato",
+        y="Task/Bug",
+        color="StatusCategory",
+        text="Task/Bug",
+        title="Distribuzione Task/Bug per stato",
+    )
 
-    with col1:
-        fig = px.bar(
-            status_df,
-            x="Stato",
-            y="Task/Bug",
-            color="StatusCategory",
-            text="Task/Bug",
-            title="Distribuzione Task/Bug per stato",
-        )
+    fig.update_layout(
+        xaxis_title="Stato",
+        yaxis_title="Numero Task/Bug",
+        legend_title="Categoria",
+    )
 
-        fig.update_layout(
-            xaxis_title="Stato",
-            yaxis_title="Numero Task/Bug",
-            legend_title="Categoria",
-        )
+    fig.update_traces(textposition="outside")
 
-        fig.update_traces(textposition="outside")
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        key=f"status_panel_chart_{key_suffix}",
+    )
 
-        st.plotly_chart(
-            fig,
-            use_container_width=True,
-            key=f"status_panel_chart_{key_suffix}",
-        )
-
-    with col2:
-        st.dataframe(
-            status_df,
-            use_container_width=True,
-            hide_index=True,
-            key=f"status_panel_table_{key_suffix}",
-        )
+    st.dataframe(
+        status_df,
+        use_container_width=True,
+        hide_index=True,
+        key=f"status_panel_table_{key_suffix}",
+    )
 
 def render_status_category_panel(df: pd.DataFrame, key_suffix: str = "default"):
     st.subheader("Categorie stato Jira")
@@ -248,36 +244,32 @@ def render_epic_panel(df: pd.DataFrame, key_suffix: str = "default"):
 
     grouped = grouped.sort_values("TaskBug", ascending=False)
 
-    col1, col2 = st.columns([2, 1])
+    fig = px.bar(
+        grouped.head(20),
+        x="Epic",
+        y=["Aperti", "Completati"],
+        title="Task/Bug aperti e completati per Epic",
+        barmode="stack",
+    )
 
-    with col1:
-        fig = px.bar(
-            grouped.head(20),
-            x="Epic",
-            y=["Aperti", "Completati"],
-            title="Task/Bug aperti e completati per Epic",
-            barmode="stack",
-        )
+    fig.update_layout(
+        xaxis_title="Epic",
+        yaxis_title="Numero Task/Bug",
+        legend_title="",
+    )
 
-        fig.update_layout(
-            xaxis_title="Epic",
-            yaxis_title="Numero Task/Bug",
-            legend_title="",
-        )
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        key=f"epic_panel_chart_{key_suffix}",
+    )
 
-        st.plotly_chart(
-            fig,
-            use_container_width=True,
-            key=f"epic_panel_chart_{key_suffix}",
-        )
-
-    with col2:
-        st.dataframe(
-            grouped,
-            use_container_width=True,
-            hide_index=True,
-            key=f"epic_panel_table_{key_suffix}",
-        )
+    st.dataframe(
+        grouped,
+        use_container_width=True,
+        hide_index=True,
+        key=f"epic_panel_table_{key_suffix}",
+    )
 
 def render_assignee_panel(df: pd.DataFrame, key_suffix: str = "default"):
     st.subheader("Task/Bug per assegnatario")
