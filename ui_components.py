@@ -508,7 +508,7 @@ def render_worklog_tables(
 
     st.divider()
 
-    st.subheader("Matrice ore per giorno")
+    st.subheader("Ore per giorno")
 
     worked_days = sorted(worklog_df["Data"].dt.date.dropna().unique())
 
