@@ -444,7 +444,12 @@ def render_age_panel(df: pd.DataFrame, key_suffix: str = "default"):
         },
     )
 
-def render_worklog_tables(worklog_df: pd.DataFrame, key_suffix: str = "default"):
+def render_worklog_tables(
+    worklog_df: pd.DataFrame,
+    date_from=None,
+    date_to=None,
+    key_suffix: str = "default",
+):
     if worklog_df.empty:
         st.info("Nessun worklog trovato nel periodo selezionato.")
         return
@@ -505,6 +510,8 @@ def render_worklog_tables(worklog_df: pd.DataFrame, key_suffix: str = "default")
 
     st.subheader("Matrice ore per giorno")
 
+    worked_days = sorted(worklog_df["Data"].dt.date.dropna().unique())
+
     matrix_df = (
         worklog_df
         .pivot_table(
@@ -520,22 +527,22 @@ def render_worklog_tables(worklog_df: pd.DataFrame, key_suffix: str = "default")
         st.info("Nessun dato disponibile per la matrice ore.")
         return
 
-    date_columns = sorted(matrix_df.columns)
-    matrix_df = matrix_df[date_columns]
+    matrix_df = matrix_df.reindex(columns=worked_days)
+    matrix_df = matrix_df.fillna(0)
 
     matrix_df["Totale"] = matrix_df.sum(axis=1)
 
     rename_map = {
         column: pd.to_datetime(column).strftime("%d/%m/%Y")
-        for column in date_columns
+        for column in worked_days
     }
 
     matrix_df = matrix_df.rename(columns=rename_map)
     matrix_df = matrix_df.reset_index()
 
-    hour_columns = [rename_map[column] for column in date_columns]
+    hour_columns = [rename_map[column] for column in worked_days]
 
-    def highlight_low_hours(value):
+    def highlight_hours(value):
         if pd.isna(value):
             return ""
 
@@ -544,8 +551,19 @@ def render_worklog_tables(worklog_df: pd.DataFrame, key_suffix: str = "default")
         except Exception:
             return ""
 
+        if numeric_value == 0 or numeric_value > 8:
+            return (
+                "background-color: #ffd6d6; "
+                "color: #7a0000; "
+                "font-weight: 700;"
+            )
+
         if 0 < numeric_value < 8:
-            return "background-color: #fff3b0; color: #3d2b00; font-weight: 600;"
+            return (
+                "background-color: #fff3b0; "
+                "color: #3d2b00; "
+                "font-weight: 600;"
+            )
 
         return ""
 
@@ -559,14 +577,16 @@ def render_worklog_tables(worklog_df: pd.DataFrame, key_suffix: str = "default")
         .style
         .format(formatters)
         .map(
-            highlight_low_hours,
+            highlight_hours,
             subset=hour_columns,
         )
     )
 
     st.caption(
-        "Le celle sono evidenziate in giallo quando l'utente ha segnato "
-        "più di 0 ore ma meno di 8 ore nella giornata."
+        "La matrice mostra solo i giorni in cui è presente almeno un worklog. "
+        "Le celle sono gialle quando l'utente ha segnato più di 0 ore ma meno di 8. "
+        "Le celle sono rosse quando l'utente non ha segnato ore in un giorno in cui altri hanno segnato ore, "
+        "oppure quando ha segnato più di 8 ore."
     )
 
     st.dataframe(
