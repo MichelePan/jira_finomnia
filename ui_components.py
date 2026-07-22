@@ -444,6 +444,138 @@ def render_age_panel(df: pd.DataFrame, key_suffix: str = "default"):
         },
     )
 
+def render_worklog_tables(worklog_df: pd.DataFrame, key_suffix: str = "default"):
+    if worklog_df.empty:
+        st.info("Nessun worklog trovato nel periodo selezionato.")
+        return
+
+    total_hours = worklog_df["Ore"].sum()
+    users = worklog_df["Utente"].replace("", pd.NA).dropna().nunique()
+    issues = worklog_df["Issue"].replace("", pd.NA).dropna().nunique()
+    days = worklog_df["Data"].dt.date.nunique()
+
+    c1, c2, c3, c4 = st.columns(4)
+
+    c1.metric("Ore totali", f"{total_hours:.2f}")
+    c2.metric("Utenti", users)
+    c3.metric("Issue lavorate", issues)
+    c4.metric("Giorni con worklog", days)
+
+    st.divider()
+
+    st.subheader("Attività lavorate nel periodo")
+
+    detail_df = worklog_df.copy()
+    detail_df["Data"] = detail_df["Data"].dt.strftime("%d/%m/%Y")
+
+    detail_columns = [
+        "Data",
+        "Utente",
+        "Issue",
+        "Summary",
+        "IssueType",
+        "Stato",
+        "Assignee",
+        "EpicName",
+        "Ore",
+        "Url",
+    ]
+
+    existing_detail_columns = [
+        column
+        for column in detail_columns
+        if column in detail_df.columns
+    ]
+
+    st.dataframe(
+        detail_df[existing_detail_columns],
+        use_container_width=True,
+        hide_index=True,
+        key=f"worklog_detail_table_{key_suffix}",
+        column_config={
+            "Ore": st.column_config.NumberColumn(
+                "Ore",
+                format="%.2f",
+            ),
+            "Url": st.column_config.LinkColumn("Jira"),
+        },
+    )
+
+    st.divider()
+
+    st.subheader("Matrice ore per giorno")
+
+    matrix_df = (
+        worklog_df
+        .pivot_table(
+            index="Utente",
+            columns=worklog_df["Data"].dt.date,
+            values="Ore",
+            aggfunc="sum",
+        )
+        .sort_index()
+    )
+
+    if matrix_df.empty:
+        st.info("Nessun dato disponibile per la matrice ore.")
+        return
+
+    date_columns = sorted(matrix_df.columns)
+    matrix_df = matrix_df[date_columns]
+
+    matrix_df["Totale"] = matrix_df.sum(axis=1)
+
+    rename_map = {
+        column: pd.to_datetime(column).strftime("%d/%m/%Y")
+        for column in date_columns
+    }
+
+    matrix_df = matrix_df.rename(columns=rename_map)
+    matrix_df = matrix_df.reset_index()
+
+    hour_columns = [rename_map[column] for column in date_columns]
+
+    def highlight_low_hours(value):
+        if pd.isna(value):
+            return ""
+
+        try:
+            numeric_value = float(value)
+        except Exception:
+            return ""
+
+        if 0 < numeric_value < 8:
+            return "background-color: #fff3b0; color: #3d2b00; font-weight: 600;"
+
+        return ""
+
+    formatters = {
+        column: lambda value: "" if pd.isna(value) else f"{value:.2f}"
+        for column in hour_columns + ["Totale"]
+    }
+
+    styled_matrix = (
+        matrix_df
+        .style
+        .format(formatters)
+        .map(
+            highlight_low_hours,
+            subset=hour_columns,
+        )
+    )
+
+    st.caption(
+        "Le celle sono evidenziate in giallo quando l'utente ha segnato "
+        "più di 0 ore ma meno di 8 ore nella giornata."
+    )
+
+    st.dataframe(
+        styled_matrix,
+        use_container_width=True,
+        hide_index=True,
+        key=f"worklog_matrix_table_{key_suffix}",
+    )
+
 def render_detail_table(df: pd.DataFrame, key_suffix: str = "default"):
     st.subheader("Dettaglio issue")
 
